@@ -75,17 +75,35 @@ static bool _dd_should_trace_call(zend_execute_data *call, zend_function *fbc, d
 }
 
 static void _dd_copy_function_args(zend_execute_data *call, zval *user_args) {
-    uint32_t i;
+    uint32_t i, first_extra_arg;
     zval *p, *q;
     uint32_t arg_count = ZEND_CALL_NUM_ARGS(call);
 
     // @see https://github.com/php/php-src/blob/PHP-7.0/Zend/zend_builtin_functions.c#L506-L562
     array_init_size(user_args, arg_count);
     if (arg_count) {
+        first_extra_arg = call->func->op_array.num_args;
         zend_hash_real_init(Z_ARRVAL_P(user_args), 1);
         ZEND_HASH_FILL_PACKED(Z_ARRVAL_P(user_args)) {
             i = 0;
             p = ZEND_CALL_ARG(call, 1);
+            if (arg_count > first_extra_arg) {
+                while (i < first_extra_arg) {
+                    q = p;
+                    if (EXPECTED(Z_TYPE_INFO_P(q) != IS_UNDEF)) {
+                        ZVAL_DEREF(q);
+                        if (Z_OPT_REFCOUNTED_P(q)) { 
+                            Z_ADDREF_P(q);
+                        }
+                    } else {
+                        q = &EG(uninitialized_zval);
+                    }
+                    ZEND_HASH_FILL_ADD(q);
+                    p++;
+                    i++;
+                }
+                p = ZEND_CALL_VAR_NUM(call, call->func->op_array.last_var + call->func->op_array.T);
+            }
             while (i < arg_count) {
                 q = p;
                 if (EXPECTED(Z_TYPE_INFO_P(q) != IS_UNDEF)) {
